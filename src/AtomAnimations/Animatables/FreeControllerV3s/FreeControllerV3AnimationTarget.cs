@@ -259,6 +259,11 @@ namespace VamTimeline
             return $"[FreeControllerV3 Target: {name}]";
         }
 
+        public int GetKeyframeIndexByTime(float time)
+        {
+            return GetLeadCurve().KeyframeBinarySearch(time);
+        }
+
         public class Comparer : IComparer<FreeControllerV3AnimationTarget>
         {
             public int Compare(FreeControllerV3AnimationTarget x, FreeControllerV3AnimationTarget y)

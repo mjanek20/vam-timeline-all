@@ -19,7 +19,7 @@ namespace VamTimeline
             _clip = clip;
         }
 
-        public void Apply(Snapshot offsetSnapshot, float from, float to, string offsetMode)
+        public void Apply(Snapshot offsetSnapshot, float from, float to, string offsetMode, float smoothingDuration)
         {
             var useRepositionMode = offsetMode == RepositionMode;
             var pivot = Vector3.zero;
@@ -37,20 +37,19 @@ namespace VamTimeline
 
             foreach (var snap in offsetSnapshot.clipboard.controllers)
             {
-                // SuperController.LogMessage($"{snap.controllerRef.name} parent {snap.controllerRef.controller.control.parent.parent}");
                 var target = _clip.targetControllers.First(t => t.TargetsSameAs(snap.animatableRef, snap.snapshot.position != null, snap.snapshot.rotation != null));
                 if (!target.EnsureParentAvailable(false)) continue;
-                var posLink = target.GetPositionParentRB();
-                var hasPosLink = !ReferenceEquals(posLink, null);
-                var rotLink = target.GetRotationParentRB();
-                var hasRotLink = !ReferenceEquals(rotLink, null);
+
                 var control = snap.animatableRef.controller.control;
                 var controlParent = control.parent;
 
-                if(!useRepositionMode)
+                if (!useRepositionMode)
                 {
+                    var posLink = target.GetPositionParentRB();
+                    var hasPosLink = !ReferenceEquals(posLink, null);
+
                     var positionAfter = hasPosLink ? posLink.transform.InverseTransformPoint(snap.animatableRef.controller.transform.position) : control.localPosition;
-                    var rotationAfter = hasRotLink ? Quaternion.Inverse(rotLink.rotation) * snap.animatableRef.controller.transform.rotation : control.localRotation;
+                    var rotationAfter = hasPosLink ? Quaternion.Inverse(posLink.rotation) * snap.animatableRef.controller.transform.rotation : control.localRotation;
 
                     var positionBefore = snap.snapshot.position?.AsVector3() ?? positionAfter;
                     var rotationBefore = snap.snapshot.rotation?.AsQuaternion() ?? rotationAfter;
@@ -63,44 +62,109 @@ namespace VamTimeline
                 target.StartBulkUpdates();
                 try
                 {
+                    var newKeyframes = new Dictionary<float, TransformStruct>();
+
+                    // Faza 1: Oblicz nowe pozycje, ale ich nie stosuj
                     foreach (var key in target.GetAllKeyframesKeys())
                     {
-                        if (!useRepositionMode)
+                        var time = target.GetKeyframeTime(key);
+                        if (time < from - 0.0001f || time > to + 0.001f) continue;
+
+                        if (Math.Abs(time - offsetSnapshot.clipboard.time) < 0.0001f)
                         {
-                            // Do not double-apply already moved keyframe
-                            var time = target.GetKeyframeTime(key);
-                            if (time < from - 0.0001f || time > to + 0.001f) continue;
-                            if (Math.Abs(time - offsetSnapshot.clipboard.time) < 0.0001) continue;
+                            newKeyframes[time] = new TransformStruct
+                            {
+                                position = target.GetKeyframePosition(key),
+                                rotation = target.GetKeyframeRotation(key)
+                            };
+                            continue;
                         }
 
                         var positionBefore = target.targetsPosition ? target.GetKeyframePosition(key) : control.position;
                         var rotationBefore = target.targetsRotation ? target.GetKeyframeRotation(key) : control.rotation;
 
+                        Vector3 positionAfter;
+                        Quaternion rotationAfter;
+
                         switch (offsetMode)
                         {
                             case ChangePivotMode:
-                            {
-                                var positionAfter = rotationDelta * (positionBefore - pivot) + pivot + positionDelta;
-                                target.SetKeyframeByKey(key, positionAfter, rotationBefore * rotationDelta);
+                                positionAfter = rotationDelta * (positionBefore - pivot) + pivot + positionDelta;
+                                rotationAfter = rotationBefore * rotationDelta;
                                 break;
-                            }
                             case OffsetMode:
-                                target.SetKeyframeByKey(key, positionBefore + positionDelta, rotationBefore * rotationDelta);
+                                positionAfter = positionBefore + positionDelta;
+                                rotationAfter = rotationBefore * rotationDelta;
                                 break;
                             case RepositionMode:
-                            {
                                 positionBefore = controlParent.TransformPoint(positionBefore);
-                                var positionAfter = rotationDelta * (positionBefore - pivot) + pivot + positionDelta;
+                                positionAfter = rotationDelta * (positionBefore - pivot) + pivot + positionDelta;
                                 rotationBefore = controlParent.TransformRotation(rotationBefore);
-                                var rotationAfter = rotationDelta * rotationBefore;
-                                target.SetKeyframeByKey(key,
-                                    controlParent.InverseTransformPoint(positionAfter),
-                                    controlParent.InverseTransformRotation(rotationAfter)
-                                );
+                                rotationAfter = rotationDelta * rotationBefore;
+                                positionAfter = controlParent.InverseTransformPoint(positionAfter);
+                                rotationAfter = controlParent.InverseTransformRotation(rotationAfter);
                                 break;
-                            }
                             default:
                                 throw new NotImplementedException($"Offset mode '{offsetMode}' is not implemented");
+                        }
+
+                        newKeyframes[time] = new TransformStruct
+                        {
+                            position = positionAfter,
+                            rotation = rotationAfter
+                        };
+                    }
+
+                    if (smoothingDuration > 0.001f)
+                    {
+                        // Faza 2: Wygładzanie "przed" offsetem (Blend-in)
+                        var blendInStart = Mathf.Max(0f, from - smoothingDuration);
+                        var firstOffsetKeyframe = newKeyframes.OrderBy(kvp => kvp.Key).First().Value;
+
+                        foreach (var key in target.GetAllKeyframesKeys())
+                        {
+                            var time = target.GetKeyframeTime(key);
+                            if (time < blendInStart || time >= from) continue;
+
+                            var alpha = (time - blendInStart) / smoothingDuration;
+                            var originalPosition = target.GetKeyframePosition(key);
+                            var originalRotation = target.GetKeyframeRotation(key);
+
+                            var smoothedPosition = Vector3.Lerp(originalPosition, firstOffsetKeyframe.position, alpha);
+                            var smoothedRotation = Quaternion.Slerp(originalRotation, firstOffsetKeyframe.rotation, alpha);
+
+                            target.SetKeyframeByKey(key, smoothedPosition, smoothedRotation);
+                        }
+
+                        // Faza 3: Wygładzanie "po" offsecie (Blend-out)
+                        var blendOutEnd = Mathf.Min(_clip.animationLength, to + smoothingDuration);
+                        var lastOffsetKeyframe = newKeyframes.OrderByDescending(kvp => kvp.Key).First().Value;
+
+                        foreach (var key in target.GetAllKeyframesKeys())
+                        {
+                            var time = target.GetKeyframeTime(key);
+                            if (time <= to || time > blendOutEnd) continue;
+
+                            var alpha = 1f - ((time - to) / smoothingDuration);
+                            var originalPosition = target.GetKeyframePosition(key);
+                            var originalRotation = target.GetKeyframeRotation(key);
+
+                            var smoothedPosition = Vector3.Lerp(originalPosition, lastOffsetKeyframe.position, alpha);
+                            var smoothedRotation = Quaternion.Slerp(originalRotation, lastOffsetKeyframe.rotation, alpha);
+
+                            target.SetKeyframeByKey(key, smoothedPosition, smoothedRotation);
+                        }
+                    }
+
+                    // Faza 4: Zastosuj właściwy offset
+                    foreach (var kvp in newKeyframes)
+                    {
+                        var time = kvp.Key;
+                        var newTransform = kvp.Value;
+                        var key = target.GetKeyframeIndexByTime(time);
+                        if (key != -1)
+                        {
+                            target.SetKeyframeByKey(key, newTransform.position, newTransform.rotation);
                         }
                     }
                 }
@@ -108,7 +172,6 @@ namespace VamTimeline
                 {
                     target.EndBulkUpdates();
                 }
-
             }
         }
 

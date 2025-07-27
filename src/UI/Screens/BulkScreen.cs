@@ -28,6 +28,7 @@ namespace VamTimeline
         private JSONStorableStringChooser _changeCurveJSON;
         private JSONStorableStringChooser _offsetModeJSON;
         private UIDynamicButton _offsetControllerUI;
+        private JSONStorableFloat _smoothingDurationJSON;
 
         public override void Init(IAtomPlugin plugin, object arg)
         {
@@ -60,6 +61,10 @@ namespace VamTimeline
         {
             _offsetModeJSON = new JSONStorableStringChooser("Offset mode", new List<string> { OffsetOperations.ChangePivotMode, OffsetOperations.OffsetMode, OffsetOperations.RepositionMode }, _lastOffsetMode ?? OffsetOperations.RepositionMode, "Offset mode", val => _lastOffsetMode = val);
             prefabFactory.CreatePopup(_offsetModeJSON, false, true, 230f, true);
+
+            _smoothingDurationJSON = new JSONStorableFloat("Smoothing duration", 0f, 0f, 2f);
+            var smoothingSlider = prefabFactory.CreateSlider(_smoothingDurationJSON);
+            smoothingSlider.valueFormat = "F2";
 
             _offsetControllerUI = prefabFactory.CreateButton(_offsetting ? _offsetControllerUIOffsetLabel : _offsetControllerUILabel);
             _offsetControllerUI.button.onClick.AddListener(OffsetController);
@@ -250,7 +255,7 @@ namespace VamTimeline
                 return;
             }
 
-            operations.Offset().Apply(_offsetSnapshot, _startJSON.val, _endJSON.val, _offsetModeJSON.val);
+            operations.Offset().Apply(_offsetSnapshot, _startJSON.val, _endJSON.val, _offsetModeJSON.val, _smoothingDurationJSON.val);
 
             animationEditContext.Sample();
         }

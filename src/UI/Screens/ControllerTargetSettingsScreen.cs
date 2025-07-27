@@ -140,7 +140,7 @@ namespace VamTimeline
                 return;
             }
             var atom = SuperController.singleton.GetAtomByUid(_atomJSON.val);
-            if(atom == null)
+            if (atom == null)
             {
                 _rigidbodyJSON.choices = new List<string> { "None" };
                 return;
@@ -191,7 +191,7 @@ namespace VamTimeline
             targetControllerTransform.rotation = previousRotation;
             animationEditContext.SetKeyframeToCurrentTransform(_target, 0f);
 
-            offset.Apply(snapshot, 0f, current.animationLength, OffsetOperations.ChangePivotMode);
+            offset.Apply(snapshot, 0f, current.animationLength, OffsetOperations.ChangePivotMode, 0f);
         }
 
         protected override void OnCurrentAnimationChanged(AtomAnimationEditContext.CurrentAnimationChangedEventArgs args)
