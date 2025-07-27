@@ -141,7 +141,8 @@ namespace VamTimeline
         {
             if (_available)
             {
-                if (storable != null)
+                var currentStorable = _atom.GetStorableByID(storableId);
+                if (storable && storable == currentStorable && floatParam != null && storable.GetFloatJSONParam(floatParamName) == floatParam)
                 {
                     TryAssignMinMax();
                     return true;
