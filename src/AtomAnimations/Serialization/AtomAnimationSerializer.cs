@@ -113,6 +113,7 @@ namespace VamTimeline
             {
                 blendInDuration = DeserializeFloat(clipJSON["BlendDuration"], AtomAnimationClip.DefaultBlendDuration),
                 loop = DeserializeBool(clipJSON["Loop"], true),
+                blendStartEnd = DeserializeBool(clipJSON["BlendStartEnd"], false),
                 autoTransitionPrevious = legacyTransition ?? DeserializeBool(clipJSON["AutoTransitionPrevious"], false),
                 autoTransitionNext = legacyTransition ?? DeserializeBool(clipJSON["AutoTransitionNext"], false),
                 preserveLoops = DeserializeBool(clipJSON["SyncTransitionTime"], false),
@@ -562,6 +563,7 @@ namespace VamTimeline
                 { "AnimationLength", clip.animationLength.ToString(CultureInfo.InvariantCulture) },
                 { "BlendDuration", clip.blendInDuration.ToString(CultureInfo.InvariantCulture) },
                 { "Loop", clip.loop ? "1" : "0" },
+                { "BlendStartEnd", clip.blendStartEnd ? "1" : "0" },
                 { "NextAnimationRandomizeWeight", clip.nextAnimationRandomizeWeight.ToString(CultureInfo.InvariantCulture) },
                 { "AutoTransitionPrevious", clip.autoTransitionPrevious ? "1" : "0" },
                 { "AutoTransitionNext", clip.autoTransitionNext ? "1" : "0" },
